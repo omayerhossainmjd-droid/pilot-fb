@@ -1,0 +1,6 @@
+{
+  "name": "PagePilot - Facebook Page Automation & Management",
+  "description": "Enterprise-grade SaaS for Facebook Page management and automation powered exclusively by the official Meta Graph API.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

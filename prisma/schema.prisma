@@ -1,0 +1,324 @@
+// Prisma Schema for PagePilot SaaS
+// Meta Graph API Page Management & Automation System
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum PostStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  FAILED
+}
+
+enum PostType {
+  TEXT
+  LINK
+  PHOTO
+  VIDEO
+}
+
+enum ScheduledStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum ActionStatus {
+  SUCCESS
+  FAILED
+  PENDING
+  SKIPPED
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
+
+model User {
+  id                  String               @id @default(uuid())
+  email               String               @unique
+  name                String
+  avatarUrl           String?
+  facebookConnections FacebookConnection[]
+  facebookPages       FacebookPage[]
+  activityLogs        ActivityLog[]
+  notifications       Notification[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  @@index([email])
+}
+
+model FacebookConnection {
+  id                      String         @id @default(uuid())
+  userId                  String
+  user                    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  facebookUserId          String         @unique
+  facebookUserName        String
+  encryptedUserAccessToken String
+  tokenExpiresAt          DateTime?
+  scopes                  String[]
+  isValid                 Boolean        @default(true)
+  lastSyncedAt            DateTime       @default(now())
+  pages                   FacebookPage[]
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+
+  @@index([userId])
+  @@index([facebookUserId])
+}
+
+model FacebookPage {
+  id                   String                @id @default(uuid())
+  pageId               String                @unique // Meta Graph API Page ID
+  name                 String
+  category             String?
+  tasks                String[]              // Meta assigned permissions e.g. CREATE_CONTENT, MODERATE
+  pictureUrl           String?
+  followersCount       Int                   @default(0)
+  fanCount             Int                   @default(0)
+  isConnected          Boolean               @default(true)
+  isDefault            Boolean               @default(false)
+  userId               String
+  user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connectionId         String
+  connection           FacebookConnection    @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  tokens               PageToken[]
+  posts                Post[]
+  comments             Comment[]
+  commentTemplates     CommentTemplate[]
+  automationRules      AutomationRule[]
+  automationExecutions AutomationExecution[]
+  analyticsSnapshots   AnalyticsSnapshot[]
+  activityLogs         ActivityLog[]
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  @@index([userId])
+  @@index([pageId])
+}
+
+model PageToken {
+  id                     String       @id @default(uuid())
+  pageId                 String       @unique
+  page                   FacebookPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  encryptedPageAccessToken String
+  permissions            String[]
+  expiresAt              DateTime?
+  isValid                Boolean      @default(true)
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+
+  @@index([pageId])
+}
+
+model Post {
+  id               String          @id @default(uuid())
+  postId           String?         @unique // Meta Post ID (e.g. {page_id}_{post_id})
+  pageId           String
+  page             FacebookPage    @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  message          String
+  linkUrl          String?
+  photoUrl         String?
+  videoUrl         String?
+  status           PostStatus      @default(DRAFT)
+  postType         PostType        @default(TEXT)
+  publishedAt      DateTime?
+  scheduledFor     DateTime?
+  permalink        String?
+  likeCount        Int             @default(0)
+  commentCount     Int             @default(0)
+  shareCount       Int             @default(0)
+  reachCount       Int             @default(0)
+  impressionsCount Int             @default(0)
+  errorMessage     String?
+  scheduledPost    ScheduledPost?
+  comments         Comment[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([pageId])
+  @@index([status])
+  @@index([scheduledFor])
+}
+
+model ScheduledPost {
+  id            String          @id @default(uuid())
+  postId        String          @unique
+  post          Post            @relation(fields: [postId], references: [id], onDelete: Cascade)
+  scheduledTime DateTime
+  timezone      String          @default("UTC")
+  retryCount    Int             @default(0)
+  maxRetries    Int             @default(3)
+  status        ScheduledStatus @default(QUEUED)
+  lastError     String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([scheduledTime, status])
+}
+
+model Comment {
+  id              String         @id @default(uuid())
+  commentId       String         @unique // Meta Comment ID
+  postId          String
+  post            Post           @relation(fields: [postId], references: [id], onDelete: Cascade)
+  pageId          String
+  page            FacebookPage   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  fromId          String?
+  fromName        String?
+  message         String
+  createdTime     DateTime
+  isHidden        Boolean        @default(false)
+  isDeleted       Boolean        @default(false)
+  canReply        Boolean        @default(true)
+  canHide         Boolean        @default(true)
+  canDelete       Boolean        @default(true)
+  parentCommentId String?
+  processedAt     DateTime?
+  replyCommentId  String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([pageId])
+  @@index([postId])
+  @@index([createdTime])
+}
+
+model CommentTemplate {
+  id             String       @id @default(uuid())
+  name           String
+  replyText      String
+  pageId         String
+  page           FacebookPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  keywords       String[]
+  status         String       @default("ACTIVE")
+  executionCount Int          @default(0)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([pageId])
+}
+
+model AutomationRule {
+  id                   String                @id @default(uuid())
+  name                 String
+  pageId               String
+  page                 FacebookPage          @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  triggerType          String                @default("NEW_COMMENT")
+  conditions           Json                  // e.g. { keywords: ["price"], matchType: "CONTAINS", caseInsensitive: true, logic: "OR" }
+  actions              Json                  // e.g. { replyTemplateId: "...", replyText: "...", hideComment: false }
+  isEnabled            Boolean               @default(true)
+  cooldownSeconds      Int                   @default(60)
+  maxExecutionsPerHour Int                   @default(30)
+  executionsThisHour   Int                   @default(0)
+  lastTriggeredAt      DateTime?
+  executions           AutomationExecution[]
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  @@index([pageId, isEnabled])
+}
+
+model AutomationExecution {
+  id                 String         @id @default(uuid())
+  ruleId             String
+  rule               AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  pageId             String
+  page               FacebookPage   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  postId             String?
+  commentId          String?
+  actionTaken        String
+  status             ActionStatus   @default(SUCCESS)
+  reason             String?
+  apiResponseStatus  Int?
+  responseCommentId  String?
+  executionTimeMs    Int            @default(0)
+  createdAt          DateTime       @default(now())
+
+  @@index([pageId])
+  @@index([ruleId])
+  @@index([createdAt])
+}
+
+model AnalyticsSnapshot {
+  id               String       @id @default(uuid())
+  pageId           String
+  page             FacebookPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  date             DateTime
+  impressions      Int          @default(0)
+  reach            Int          @default(0)
+  engagedUsers     Int          @default(0)
+  postEngagements  Int          @default(0)
+  reactions        Int          @default(0)
+  comments         Int          @default(0)
+  shares           Int          @default(0)
+  newFollowers     Int          @default(0)
+  createdAt        DateTime     @default(now())
+
+  @@unique([pageId, date])
+  @@index([pageId, date])
+}
+
+model ActivityLog {
+  id                String       @id @default(uuid())
+  userId            String?
+  user              User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  pageId            String?
+  page              FacebookPage? @relation(fields: [pageId], references: [id], onDelete: SetNull)
+  postId            String?
+  commentId         String?
+  actionType        String
+  timestamp         DateTime     @default(now())
+  status            ActionStatus @default(SUCCESS)
+  apiResponseStatus Int?
+  details           String?
+  errorMessage      String?
+  retryCount        Int          @default(0)
+
+  @@index([pageId])
+  @@index([status])
+  @@index([actionType])
+  @@index([timestamp])
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType @default(INFO)
+  title     String
+  message   String
+  read      Boolean          @default(false)
+  actionUrl String?
+  createdAt DateTime         @default(now())
+
+  @@index([userId, read])
+}
+
+model ApiError {
+  id           String   @id @default(uuid())
+  endpoint     String
+  method       String
+  statusCode   Int
+  errorCode    Int?
+  errorSubcode Int?
+  fbTraceId    String?
+  message      String
+  userMessage  String
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+}
